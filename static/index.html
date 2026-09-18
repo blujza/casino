@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cassino</title>
+<style>
+  :root { --felt: #1f6b43; --felt-dark: #174f32; --ink: #1b1b1b; --red: #c0262d; --gold: #f2c14e; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--felt-dark); color: #fff; font-family: system-ui, sans-serif; }
+  main { max-width: 900px; margin: 0 auto; padding: 16px; display: grid; gap: 14px; }
+  header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+  h1 { margin: 0; font-size: 1.5rem; }
+  .status { display: flex; gap: 16px; flex-wrap: wrap; font-size: .9rem; opacity: .9; }
+  .felt { background: var(--felt); border-radius: 12px; padding: 14px; min-height: 150px; }
+  .felt h2 { margin: 0 0 8px; font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; opacity: .7; }
+  .cards { display: flex; flex-wrap: wrap; gap: 8px; min-height: 96px; }
+  .card { width: 64px; height: 92px; background: #fff; color: var(--ink); border-radius: 7px; border: 2px solid #ccc;
+          display: flex; flex-direction: column; justify-content: space-between; padding: 4px 6px;
+          font-weight: 700; font-size: 1.1rem; cursor: pointer; user-select: none; }
+  .card.red { color: var(--red); }
+  .card .suit { font-size: 1.9rem; text-align: center; line-height: 1; }
+  .card .rank.bottom { align-self: flex-end; transform: rotate(180deg); }
+  .card.selected { border-color: var(--gold); transform: translateY(-8px); box-shadow: 0 6px 12px #0006; }
+  .card.back { background: repeating-linear-gradient(45deg, #2a4d9b, #2a4d9b 6px, #1e3a78 6px, #1e3a78 12px);
+               border-color: #fff; cursor: default; }
+  .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  button { font: inherit; padding: 8px 16px; border-radius: 8px; border: 0; background: var(--gold); color: #222; cursor: pointer; font-weight: 600; }
+  button:disabled { opacity: .45; cursor: default; }
+  button.secondary { background: #ffffff26; color: #fff; }
+  #message { min-height: 1.3em; color: #ffd0d0; }
+  #log { font-size: .85rem; margin: 0; padding: 10px 10px 10px 30px; list-style: decimal; background: #0003;
+         border-radius: 8px; max-height: 160px; overflow-y: auto; }
+  #result { background: #000a; border-radius: 12px; padding: 14px; text-align: center; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Cassino</h1>
+    <div class="status" id="status"></div>
+  </header>
+
+  <section class="felt"><h2>Computer</h2><div class="cards" id="computer"></div></section>
+  <section class="felt"><h2>Table</h2><div class="cards" id="table"></div></section>
+  <section class="felt"><h2>Your hand</h2><div class="cards" id="hand"></div></section>
+
+  <div class="actions">
+    <button id="take" disabled>Take</button>
+    <button id="place" disabled>Place</button>
+    <button id="new" class="secondary">New deal</button>
+    <span id="message"></span>
+  </div>
+
+  <div id="result" hidden></div>
+  <ul id="log"></ul>
+</main>
+
+<script>
+const SUITS = { S: "♠", H: "♥", D: "♦", C: "♣" };
+let state = null;
+const selHand = new Set(), selTable = new Set();
+
+const $ = id => document.getElementById(id);
+
+function cardEl(card, selected, onClick) {
+  const rank = card.slice(0, -1), suit = card.slice(-1);
+  const el = document.createElement("div");
+  el.className = "card" + (suit === "H" || suit === "D" ? " red" : "") + (selected ? " selected" : "");
+  el.innerHTML = `<span class="rank">${rank}</span><span class="suit">${SUITS[suit]}</span><span class="rank bottom">${rank}</span>`;
+  if (onClick) el.onclick = onClick;
+  return el;
+}
+
+function toggle(set, card) {
+  if (!state.yourTurn) return;
+  set.has(card) ? set.delete(card) : set.add(card);
+  render();
+}
+
+function render() {
+  const s = state;
+  for (const c of [...selHand]) if (!s.hand.includes(c)) selHand.delete(c);
+  for (const c of [...selTable]) if (!s.table.includes(c)) selTable.delete(c);
+
+  $("status").textContent = `Talon ${s.talon} · Your pile ${s.piles[0]} (sweeps ${s.sweeps[0]}) · Computer pile ${s.piles[1]} (sweeps ${s.sweeps[1]})`;
+
+  $("computer").replaceChildren(...Array.from({ length: s.computerCards }, () => {
+    const el = document.createElement("div"); el.className = "card back"; return el;
+  }));
+  $("table").replaceChildren(...s.table.map(c => cardEl(c, selTable.has(c), () => toggle(selTable, c))));
+  $("hand").replaceChildren(...s.hand.map(c => cardEl(c, selHand.has(c), () => toggle(selHand, c))));
+
+  $("take").disabled = !s.yourTurn || !selHand.size || !selTable.size;
+  $("place").disabled = !s.yourTurn || selHand.size !== 1 || selTable.size > 0;
+  const log = $("log");
+  log.replaceChildren(...s.log.map(line => Object.assign(document.createElement("li"), { textContent: line })));
+  log.scrollTop = log.scrollHeight;
+
+  const result = $("result");
+  result.hidden = !s.over;
+  if (s.over) {
+    const [you, cpu] = s.score;
+    result.textContent = `Deal over — you ${you} : ${cpu} computer. ` +
+      (you > cpu ? "You win!" : you < cpu ? "The computer wins." : "A draw.");
+  }
+}
+
+async function call(path, body) {
+  const res = await fetch(path, body === undefined ? {} : { method: "POST", body: JSON.stringify(body) });
+  const data = await res.json();
+  if (!res.ok) { $("message").textContent = data.error; return; }
+  $("message").textContent = "";
+  state = data;
+  render();
+}
+
+async function move() {
+  const body = { hand: [...selHand], table: [...selTable] };
+  selHand.clear(); selTable.clear();
+  await call("/api/move", body);
+}
+
+$("take").onclick = move;
+$("place").onclick = move;
+$("new").onclick = () => { selHand.clear(); selTable.clear(); call("/api/new", {}); };
+call("/api/state");
+</script>
+</body>
+</html>

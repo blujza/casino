@@ -12,6 +12,15 @@ There is no code here yet. There are tests.
    Card images: for example [Byron Knoll's public-domain deck](https://commons.wikimedia.org/wiki/Category:Playing_cards_set_by_Byron_Knoll)
    on Wikimedia Commons (SVG, all 52 cards).
 
+## Play
+
+```sh
+python server.py
+```
+
+Then open <http://localhost:8000>. Click cards in your hand and on the table,
+then **Take** (capture) or **Place** (one hand card, nothing selected on the table).
+
 ## Run the tests
 
 ```sh
